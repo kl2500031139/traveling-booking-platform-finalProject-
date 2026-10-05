@@ -24,6 +24,19 @@ const SEED_USERS = [
 if(!LS.get('wf_trips')) LS.set('wf_trips', SEED_TRIPS);
 if(!LS.get('wf_users')) LS.set('wf_users', SEED_USERS);
 if(!LS.get('wf_bookings')) LS.set('wf_bookings', []);
+/* self-heal: if old or edited browser data lost the demo accounts, put them back */
+(function(){
+  let us = LS.get('wf_users', []);
+  if(!Array.isArray(us)) us = [];
+  let changed = false;
+  SEED_USERS.forEach(seed => {
+    if(!us.some(u => u.id === seed.id)){
+      us = us.filter(u => u.email !== seed.email);
+      us.push({...seed}); changed = true;
+    }
+  });
+  if(changed) LS.set('wf_users', us);
+})();
 
 const trips = () => LS.get('wf_trips', []);
 const users = () => LS.get('wf_users', []);
