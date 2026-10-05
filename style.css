@@ -163,3 +163,35 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
   .hero .route{opacity:.35}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---- modules: payment, manager, user interface ---- */
+.status.Paid{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.status.Unpaid{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.status.Refunded{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.payform{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px}
+.payform h2{font-size:1.5rem}
+.mtabs{display:flex;gap:8px;margin:14px 0 18px;flex-wrap:wrap}
+.mtab{border:1.5px solid var(--line);background:var(--surface);padding:9px 18px;border-radius:99px;cursor:pointer;font-weight:600;color:var(--muted)}
+.mtab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.mpanel{display:none}
+.payform[data-method="upi"] .mpanel[data-m="upi"],
+.payform[data-method="card"] .mpanel[data-m="card"],
+.payform[data-method="netbanking"] .mpanel[data-m="netbanking"]{display:block}
+.sumrow{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);font-size:.95rem}
+.sumrow span:first-child{color:var(--muted)}
+.sumrow b{text-align:right}
+.receipt{max-width:580px;margin:6px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:32px;text-align:center}
+.tick{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;font-size:34px;display:grid;place-items:center;margin:0 auto 14px}
+.rbox{text-align:left;margin:22px 0}
+.reports{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.rcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px}
+.rcard h3{font-size:1.15rem;margin-bottom:14px}
+.bars{display:grid;gap:12px}
+.bar{display:grid;grid-template-columns:140px 1fr 84px;gap:12px;align-items:center;font-size:.92rem}
+.bar b{text-align:right}
+.bt{height:14px;border-radius:99px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.bt i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.auth .side.manager{border-right:4px solid var(--accent)}
+@media(max-width:820px){.profile-grid{grid-template-columns:1fr}.bar{grid-template-columns:100px 1fr 70px}}
+@media print{.nav,footer,.noprint,.hero{display:none!important}body{background:#fff}.receipt{border:0}}

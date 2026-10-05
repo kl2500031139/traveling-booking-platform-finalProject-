@@ -1,3 +1,5 @@
+window.WF = window.WF || { routes: {} };   // modules (ui.js, payment.js, manager.js) register their pages here
+
 /* ---------- storage (localStorage with in-memory fallback) ---------- */
 const mem = {};
 const LS = {
@@ -19,11 +21,13 @@ const SEED_TRIPS = [
 ];
 const SEED_USERS = [
   {id:'u_admin',name:'Administrator',email:'admin@wayfare.com',pass:hash('admin123'),role:'admin',created:Date.now()},
-  {id:'u_demo',name:'Demo Traveller',email:'user@wayfare.com',pass:hash('user123'),role:'user',created:Date.now()}
+  {id:'u_demo',name:'Demo Traveller',email:'user@wayfare.com',pass:hash('user123'),role:'user',created:Date.now()},
+  {id:'u_manager',name:'Operations Manager',email:'manager@wayfare.com',pass:hash('manager123'),role:'manager',created:Date.now()}
 ];
 if(!LS.get('wf_trips')) LS.set('wf_trips', SEED_TRIPS);
 if(!LS.get('wf_users')) LS.set('wf_users', SEED_USERS);
 if(!LS.get('wf_bookings')) LS.set('wf_bookings', []);
+if(!LS.get('wf_payments')) LS.set('wf_payments', []);
 /* self-heal: if old or edited browser data lost the demo accounts, put them back */
 (function(){
   let us = LS.get('wf_users', []);
@@ -41,6 +45,9 @@ if(!LS.get('wf_bookings')) LS.set('wf_bookings', []);
 const trips = () => LS.get('wf_trips', []);
 const users = () => LS.get('wf_users', []);
 const bookings = () => LS.get('wf_bookings', []);
+const payments = () => LS.get('wf_payments', []);
+const homeFor = u => !u ? '/' : u.role==='admin' ? '/admin' : u.role==='manager' ? '/manager' : '/';
+const roleLabel = r => r==='admin' ? 'Admin' : r==='manager' ? 'Manager' : 'Traveller';
 const me = () => { const s = LS.get('wf_session', null); return s ? users().find(u => u.id === s.userId) || null : null; };
 
 /* ---------- helpers ---------- */
@@ -53,7 +60,7 @@ let toastTimer;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2800); }
 const PAGE = document.body.dataset.page || '';           // '', 'login', 'register' or 'admin-login'
 const BASE = PAGE ? 'index.html' : '';                   // prefix for links back into the main page
-const FILES = {'/login':'login.html','/register':'register.html','/admin-login':'admin-login.html'};
+const FILES = {'/login':'login.html','/register':'register.html','/admin-login':'admin-login.html','/manager-login':'manager-login.html'};
 const curRoute = () => PAGE ? '/' + PAGE : (location.hash.slice(1) || '/');
 function go(path){
   if(FILES[path]) { location.href = FILES[path]; return; }
@@ -86,10 +93,13 @@ function scene(cat){
 function nav(){
   const u = me(); const r = curRoute();
   const on = p => r === p ? 'on' : '';
+  const theme = WF.themeButton ? WF.themeButton() : '';
+  const out = `<span class="who">${u ? esc(u.name) : ''}</span><button class="link" onclick="logout()">Log out</button>`;
   let links = `<a class="link ${on('/')}" href="${BASE}#/">Explore</a>`;
-  if(!u) links += `<a class="link ${on('/login')}" href="login.html">Log in</a><a class="link ${on('/register')}" href="register.html">Sign up</a><a class="link ${on('/admin-login')}" href="admin-login.html">Admin</a>`;
-  else if(u.role==='admin') links += `<a class="link ${r.startsWith('/admin')?'on':''}" href="${BASE}#/admin">Dashboard</a><span class="who">${esc(u.name)}</span><button class="link" onclick="logout()">Log out</button>`;
-  else links += `<a class="link ${on('/my-bookings')}" href="${BASE}#/my-bookings">My bookings</a><span class="who">${esc(u.name)}</span><button class="link" onclick="logout()">Log out</button>`;
+  if(!u) links += `<a class="link ${on('/login')}" href="login.html">Log in</a><a class="link ${on('/register')}" href="register.html">Sign up</a><a class="link ${on('/manager-login')}" href="manager-login.html">Manager</a><a class="link ${on('/admin-login')}" href="admin-login.html">Admin</a>${theme}`;
+  else if(u.role==='admin') links += `<a class="link ${r.startsWith('/admin')?'on':''}" href="${BASE}#/admin">Dashboard</a>${theme}${out}`;
+  else if(u.role==='manager') links += `<a class="link ${r==='/manager'?'on':''}" href="${BASE}#/manager">Dashboard</a>${theme}${out}`;
+  else links += `<a class="link ${on('/my-bookings')}" href="${BASE}#/my-bookings">My bookings</a><a class="link ${on('/profile')}" href="${BASE}#/profile">Profile</a>${theme}${out}`;
   return `<header class="nav"><div class="wrap"><a class="brand" href="${BASE}#/"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#1F8A9E"/><path d="M6 20 C10 8 20 8 26 12" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-dasharray="1 5"/><path d="M22 7 L28 12 L21 14Z" fill="#F2B84B"/></svg>Wayfare</a><nav aria-label="Main">${links}</nav></div></header>`;
 }
 const foot = `<footer><div class="wrap">Wayfare is a demo. Everything you enter is saved only in this browser (localStorage).</div></footer>`;
@@ -117,7 +127,7 @@ function setQ(v){ filt.q = v; renderGrid(); }
 
 function viewHome(){
   return `<section class="hero"><svg class="route" viewBox="0 0 600 260" fill="none" aria-hidden="true"><path d="M10 230 C120 40 300 20 400 120 S560 150 590 40" stroke="#F2B84B" stroke-width="3" stroke-dasharray="2 12" stroke-linecap="round"/><circle cx="10" cy="230" r="8" fill="#F2B84B"/><path d="M590 40 l-26 6 6 -20z" fill="#F2B84B"/></svg>
-  <div class="wrap"><h1>Where to next?</h1><p>Pick a trip, choose a date and book in a minute. Pay at the airport desk, not on the website.</p>
+  <div class="wrap"><h1>Where to next?</h1><p>Pick a trip, choose a date and book in a minute. Pay securely online right after you book.</p>
   <div class="search"><input type="text" id="q" value="${esc(filt.q)}" placeholder="Search a place, e.g. Goa or desert" aria-label="Search trips" oninput="setQ(this.value)"></div>
   <div class="chips">${CATS.map(c=>`<button class="chip" data-cat="${c}" onclick="setCat('${c}')">${c}</button>`).join('')}</div></div></section>
   <section class="section"><div class="wrap"><div class="section-head"><h2>Available trips</h2><span class="muted" id="count"></span></div><div class="grid" id="grid"></div></div></section>${foot}`;
@@ -129,7 +139,7 @@ function viewTrip(id){
   const u = me();
   let panel;
   if(t.seats <= 0) panel = `<h3>Sold out</h3><p class="muted">All seats on this trip are taken. Check back later or choose another trip.</p>`;
-  else if(u && u.role==='admin') panel = `<h3>Admin view</h3><p class="muted">Admin accounts can't make bookings. Edit this trip from the dashboard.</p><a class="btn block" href="${BASE}#/admin">Open dashboard</a>`;
+  else if(u && u.role!=='user') panel = `<h3>Staff view</h3><p class="muted">Staff accounts can't make bookings. Use your dashboard to manage trips and bookings.</p><a class="btn block" href="${BASE}#${homeFor(u)}">Open dashboard</a>`;
   else panel = `<h3>Book this trip</h3><div id="berr"></div>
     <div class="field"><label for="bdate">Travel date</label><input type="date" id="bdate" min="${today()}"></div>
     <div class="field"><label for="btrav">Travellers (max ${Math.min(t.seats,10)})</label><input type="number" id="btrav" min="1" max="${Math.min(t.seats,10)}" value="1" oninput="updTotal(${t.price})"></div>
@@ -138,7 +148,7 @@ function viewTrip(id){
     ${u ? '' : '<p class="hint">You will return to this trip after logging in.</p>'}`;
   return `<div class="wrap"><a class="back" href="${BASE}#/">‹ All trips</a><div class="trip"><div><div class="pic">${scene(t.category)}</div><h1>${esc(t.title)}</h1>
     <div class="meta" style="margin-bottom:14px"><span>${esc(t.destination)}, ${esc(t.country)}</span><span>${t.days} days</span><span>${esc(t.category)}</span><span>${t.seats} seats left</span></div>
-    <p class="lead">${esc(t.description)}</p><p class="muted">${money(t.price)} per traveller. Free cancellation from your bookings page.</p></div>
+    <p class="lead">${esc(t.description)}</p><p class="muted">${money(t.price)} per traveller. Pay online after booking. Paid bookings are refunded if you cancel.</p></div>
     <aside class="panel">${panel}</aside></div></div>${foot}`;
 }
 function updTotal(price){ const n = Math.max(1, parseInt($('#btrav').value)||1); $('#btotal').textContent = money(n*price); }
@@ -155,22 +165,25 @@ function book(id){
   if(n > t.seats) return fail(`Only ${t.seats} seats are left on this trip.`);
   if(n > 10) return fail('You can book up to 10 travellers at a time.');
   const all = trips(); all.find(x => x.id===id).seats -= n; LS.set('wf_trips', all);
-  const bs = bookings();
-  bs.push({id:uid('b_'), userId:u.id, tripId:t.id, title:t.title, destination:t.destination, category:t.category, date, travellers:n, total:n*t.price, status:'Pending', created:Date.now()});
+  const bs = bookings(); const bid = uid('b_');
+  bs.push({id:bid, userId:u.id, tripId:t.id, title:t.title, destination:t.destination, category:t.category, date, travellers:n, total:n*t.price, status:'Pending', paymentStatus:'Unpaid', created:Date.now()});
   LS.set('wf_bookings', bs);
-  toast('Booked. We will confirm it shortly.'); go('/my-bookings');
+  toast('Booking saved. Complete the payment to confirm it.'); go('/pay/' + bid);
 }
 
 function viewAuth(kind){
-  const admin = kind==='admin', reg = kind==='register';
-  const side = admin
-    ? `<div class="side admin"><h1>Admin console</h1><p>Manage trips, review bookings and keep an eye on revenue.</p></div>`
+  const staff = kind==='admin' || kind==='manager', reg = kind==='register';
+  const info = {admin:['Admin console','Manage trips, accounts and the whole platform.'], manager:['Manager console','Confirm paid bookings, check payments and read reports.']};
+  const side = staff
+    ? `<div class="side admin ${kind}"><h1>${info[kind][0]}</h1><p>${info[kind][1]}</p></div>`
     : `<div class="side"><h1>${reg?'Start planning your next trip.':'Welcome back.'}</h1><p>${reg?'Create an account to book trips and manage them in one place.':'Log in to see your bookings and reserve your next trip.'}</p></div>`;
-  const form = admin ? `
-    <h2>Admin log in</h2><p class="sub">For staff accounts only.</p><div id="aerr"></div>
-    <form onsubmit="return doLogin(event,'admin')"><div class="field"><label for="em">Admin email</label><input type="email" id="em" required autocomplete="username"></div>
-    <div class="field"><label for="pw">Password</label><input type="password" id="pw" required autocomplete="current-password"></div><button class="btn block">Log in as admin</button></form>
-    <p class="hint">Demo admin: admin@wayfare.com / admin123</p><p class="alt">Not an admin? <a href="login.html">Go to traveller log in</a></p>`
+  const staffForm = (k, label, demo, alt) => `
+    <h2>${label} log in</h2><p class="sub">For staff accounts only.</p><div id="aerr"></div>
+    <form onsubmit="return doLogin(event,'${k}')"><div class="field"><label for="em">${label} email</label><input type="email" id="em" required autocomplete="username"></div>
+    <div class="field"><label for="pw">Password</label><input type="password" id="pw" required autocomplete="current-password"></div><button class="btn block">Log in as ${label.toLowerCase()}</button></form>
+    <p class="hint">Demo ${label.toLowerCase()}: ${demo}</p><p class="alt">${alt}</p>`;
+  const form = kind==='admin' ? staffForm('admin','Admin','admin@wayfare.com / admin123','Not an admin? <a href="login.html">Traveller log in</a> · <a href="manager-login.html">Manager log in</a>')
+  : kind==='manager' ? staffForm('manager','Manager','manager@wayfare.com / manager123','Not a manager? <a href="login.html">Traveller log in</a> · <a href="admin-login.html">Admin log in</a>')
   : reg ? `
     <h2>Create account</h2><p class="sub">It takes less than a minute.</p><div id="aerr"></div>
     <form onsubmit="return doRegister(event)"><div class="field"><label for="nm">Full name</label><input type="text" id="nm" required autocomplete="name"></div>
@@ -182,7 +195,7 @@ function viewAuth(kind){
     <form onsubmit="return doLogin(event,'user')"><div class="field"><label for="em">Email</label><input type="email" id="em" required autocomplete="username"></div>
     <div class="field"><label for="pw">Password</label><input type="password" id="pw" required autocomplete="current-password"></div><button class="btn block">Log in</button></form>
     <p class="hint">Demo traveller: user@wayfare.com / user123</p>
-    <p class="alt">New here? <a href="register.html">Create an account</a> · <a href="admin-login.html">Admin log in</a></p>`;
+    <p class="alt">New here? <a href="register.html">Create an account</a> · <a href="manager-login.html">Manager log in</a> · <a href="admin-login.html">Admin log in</a></p>`;
   return `<div class="auth">${side}<div class="formcol"><div class="box">${form}</div></div></div>`;
 }
 function authErr(m){ $('#aerr').innerHTML = `<div class="err">${esc(m)}</div>`; return false; }
@@ -191,11 +204,12 @@ function doLogin(e, kind){
   const em = $('#em').value.trim().toLowerCase(), pw = $('#pw').value;
   const u = users().find(x => x.email === em);
   if(!u || u.pass !== hash(pw)) return authErr('Email or password is incorrect. Check both and try again.');
-  if(kind==='admin' && u.role!=='admin') return authErr('This account is not an admin. Use the traveller log in instead.');
-  if(kind==='user' && u.role==='admin') return authErr('This is an admin account. Use the admin log in instead.');
+  if(kind==='admin' && u.role!=='admin') return authErr('This account is not an admin. Use the correct log in page instead.');
+  if(kind==='manager' && u.role!=='manager') return authErr('This account is not a manager. Use the correct log in page instead.');
+  if(kind==='user' && u.role!=='user') return authErr(u.role==='admin' ? 'This is an admin account. Use the admin log in instead.' : 'This is a manager account. Use the manager log in instead.');
   LS.set('wf_session', {userId:u.id});
   toast('Welcome, ' + u.name.split(' ')[0] + '.');
-  if(u.role==='admin') return go('/admin'), false;
+  if(u.role!=='user') return go(homeFor(u)), false;
   const next = sessionStorage.getItem('wf_next'); sessionStorage.removeItem('wf_next');
   go(next || '/'); return false;
 }
@@ -212,55 +226,105 @@ function doRegister(e){
 }
 function logout(){ LS.set('wf_session', null); toast('Logged out.'); go('/'); render(); }
 
+/* ---------- shared tables (used by the admin and manager dashboards) ---------- */
+const bname = b => esc((users().find(u => u.id === b.userId) || {name:'Deleted user'}).name);
+const payChip = b => { const st = b.paymentStatus || 'Unpaid'; return `<span class="status ${st}">${st}</span>`; };
+function bookingsTable(list, act){
+  if(!list.length) return `<div class="empty" style="grid-column:auto">No bookings yet. They will appear here as travellers book.</div>`;
+  const rows = list.map(b => {
+    let a = '';
+    if(act){
+      if(b.status==='Pending') a += b.paymentStatus==='Paid' ? `<button class="btn sm" onclick="adminStatus('${b.id}','Confirmed')">Confirm</button>` : `<span class="muted">Awaiting payment</span>`;
+      if(b.status!=='Cancelled') a += `<button class="btn danger sm" onclick="adminStatus('${b.id}','Cancelled')">Cancel</button>`;
+    }
+    return `<tr><td>${bname(b)}</td><td>${esc(b.title)}</td><td>${fmtDate(b.date)}</td><td>${b.travellers}</td><td>${money(b.total)}</td><td>${payChip(b)}</td><td><span class="status ${b.status}">${b.status}</span></td>${act?`<td><div class="actions">${a}</div></td>`:''}</tr>`;
+  }).join('');
+  return `<div class="tablewrap"><table><thead><tr><th>Traveller</th><th>Trip</th><th>Date</th><th>Seats</th><th>Total</th><th>Payment</th><th>Status</th>${act?'<th>Actions</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function paymentsTable(list){
+  if(!list.length) return `<div class="empty" style="grid-column:auto">No payments yet. They will appear here once travellers pay.</div>`;
+  const uname = p => esc((users().find(u => u.id === p.userId) || {name:'Deleted user'}).name);
+  return `<div class="tablewrap"><table><thead><tr><th>Transaction</th><th>Traveller</th><th>Trip</th><th>Method</th><th>Amount</th><th>Status</th><th>Paid on</th></tr></thead><tbody>${list.map(p => `<tr><td>${esc(p.txnId)}</td><td>${uname(p)}</td><td>${esc(p.title)}</td><td>${esc(p.method)}</td><td>${money(p.amount)}</td><td><span class="status ${p.status}">${p.status}</span></td><td>${new Date(p.paidAt).toLocaleDateString('en-IN')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
 /* ---------- user: my bookings ---------- */
 function viewMine(){
   const u = me();
   const list = bookings().filter(b => b.userId === u.id).sort((a,b) => b.created - a.created);
+  const actions = b => {
+    let a = '';
+    if(b.status!=='Cancelled' && b.paymentStatus!=='Paid') a += `<a class="btn sm" href="${BASE}#/pay/${b.id}">Pay now</a>`;
+    if(b.paymentStatus==='Paid' || b.paymentStatus==='Refunded') a += `<a class="btn ghost sm" href="${BASE}#/receipt/${b.paymentId}">Receipt</a>`;
+    if(b.status!=='Cancelled') a += `<button class="btn danger sm" onclick="cancelBooking('${b.id}')">Cancel booking</button>`;
+    return a;
+  };
   const body = list.length ? `<div class="blist">${list.map(b => `
     <div class="bcard"><div class="pic">${scene(b.category)}</div>
     <div><h3>${esc(b.title)}</h3><div class="meta"><span>${esc(b.destination)}</span><span>${fmtDate(b.date)}</span><span>${b.travellers} traveller${b.travellers>1?'s':''}</span></div></div>
-    <div class="side"><span class="status ${b.status}">${b.status}</span><b>${money(b.total)}</b>${b.status!=='Cancelled' ? `<button class="btn danger sm" onclick="cancelBooking('${b.id}')">Cancel booking</button>`:''}</div></div>`).join('')}</div>`
+    <div class="side"><div class="actions" style="justify-content:flex-end"><span class="status ${b.status}">${b.status}</span>${payChip(b)}</div><b>${money(b.total)}</b><div class="actions" style="justify-content:flex-end">${actions(b)}</div></div></div>`).join('')}</div>`
     : `<div class="empty" style="grid-column:auto">You have no bookings yet. <a href="${BASE}#/" style="color:var(--accent);font-weight:600">Browse trips</a> to make your first one.</div>`;
   return `<div class="wrap section"><div class="section-head"><h2>My bookings</h2><span class="muted">${list.length} total</span></div>${body}</div>${foot}`;
 }
 function setBookingStatus(id, status){
   const bs = bookings(); const b = bs.find(x => x.id === id); if(!b) return;
   if(b.status === 'Cancelled') return;
+  if(status === 'Confirmed' && b.paymentStatus !== 'Paid') return;     // a booking must be paid before it is confirmed
   if(status === 'Cancelled'){
     const ts = trips(); const t = ts.find(x => x.id === b.tripId);
     if(t){ t.seats += b.travellers; LS.set('wf_trips', ts); }
+    if(b.paymentStatus === 'Paid'){                                    // refund the payment
+      const ps = payments(); const p = ps.find(x => x.id === b.paymentId);
+      if(p){ p.status = 'Refunded'; p.refundedAt = Date.now(); LS.set('wf_payments', ps); }
+      b.paymentStatus = 'Refunded';
+    }
   }
   b.status = status; LS.set('wf_bookings', bs);
 }
 function cancelBooking(id){
-  askConfirm('This releases your seats. You can book again any time.', 'Cancel booking', () => { setBookingStatus(id,'Cancelled'); toast('Booking cancelled.'); render(); });
+  const b = bookings().find(x => x.id === id);
+  const paid = b && b.paymentStatus === 'Paid';
+  askConfirm(paid ? 'Your seats are released and your payment is refunded.' : 'This releases your seats. You can book again any time.', 'Cancel booking', () => { setBookingStatus(id,'Cancelled'); toast(paid ? 'Booking cancelled. Payment refunded.' : 'Booking cancelled.'); render(); });
 }
 
 /* ---------- admin ---------- */
 let adminTab = 'overview';
 function setTab(t){ adminTab = t; render(); }
 function viewAdmin(){
-  const T = trips(), B = bookings(), U = users();
-  const rev = B.filter(b => b.status==='Confirmed').reduce((s,b)=>s+b.total,0);
-  const tabs = [['overview','Overview'],['trips','Trips'],['bookings','Bookings'],['users','Travellers']];
+  const T = trips(), B = bookings(), U = users(), P = payments();
+  const rev = P.filter(p => p.status==='Paid').reduce((a,p) => a + p.amount, 0);
+  const tabs = [['overview','Overview'],['trips','Trips'],['bookings','Bookings'],['payments','Payments'],['users','Users']];
+  if(!tabs.some(t => t[0]===adminTab)) adminTab = 'overview';
   let content = '';
-  const bname = b => esc((U.find(u=>u.id===b.userId)||{name:'Deleted user'}).name);
-  const brow = (b, act) => `<tr><td>${bname(b)}</td><td>${esc(b.title)}</td><td>${fmtDate(b.date)}</td><td>${b.travellers}</td><td>${money(b.total)}</td><td><span class="status ${b.status}">${b.status}</span></td>${act?`<td><div class="actions">${b.status==='Pending'?`<button class="btn sm" onclick="adminStatus('${b.id}','Confirmed')">Confirm</button>`:''}${b.status!=='Cancelled'?`<button class="btn danger sm" onclick="adminStatus('${b.id}','Cancelled')">Cancel</button>`:''}</div></td>`:''}</tr>`;
   if(adminTab==='overview'){
     const recent = [...B].sort((a,b)=>b.created-a.created).slice(0,5);
-    content = `<div class="stats"><div class="stat hl"><b>${money(rev)}</b><span>Confirmed revenue</span></div><div class="stat"><b>${T.length}</b><span>Trips listed</span></div><div class="stat"><b>${B.length}</b><span>Bookings (${B.filter(b=>b.status==='Pending').length} pending)</span></div><div class="stat"><b>${U.filter(u=>u.role!=='admin').length}</b><span>Registered travellers</span></div></div>
-    <h3 style="margin-bottom:12px">Latest bookings</h3>` + (recent.length ? `<div class="tablewrap"><table><thead><tr><th>Traveller</th><th>Trip</th><th>Date</th><th>Seats</th><th>Total</th><th>Status</th></tr></thead><tbody>${recent.map(b=>brow(b,false)).join('')}</tbody></table></div>` : `<div class="empty" style="grid-column:auto">No bookings yet. They will appear here as travellers book.</div>`);
+    content = `<div class="stats"><div class="stat hl"><b>${money(rev)}</b><span>Paid revenue</span></div><div class="stat"><b>${T.length}</b><span>Trips listed</span></div><div class="stat"><b>${B.length}</b><span>Bookings (${B.filter(b=>b.status==='Pending').length} pending)</span></div><div class="stat"><b>${U.filter(u=>u.role==='user').length}</b><span>Travellers, ${U.filter(u=>u.role==='manager').length} manager</span></div></div>
+    <h3 style="margin-bottom:12px">Latest bookings</h3>` + bookingsTable(recent, false);
   } else if(adminTab==='trips'){
     content = `<div class="section-head"><h3>${T.length} trips</h3><button class="btn" onclick="tripForm()">Add trip</button></div><div class="tablewrap"><table><thead><tr><th>Trip</th><th>Category</th><th>Days</th><th>Price</th><th>Seats left</th><th></th></tr></thead><tbody>${T.map(t=>`<tr><td><b>${esc(t.title)}</b><br><span class="muted">${esc(t.destination)}, ${esc(t.country)}</span></td><td>${esc(t.category)}</td><td>${t.days}</td><td>${money(t.price)}</td><td>${t.seats}</td><td><div class="actions"><button class="btn ghost sm" onclick="tripForm('${t.id}')">Edit</button><button class="btn danger sm" onclick="delTrip('${t.id}')">Delete</button></div></td></tr>`).join('')}</tbody></table></div>`;
   } else if(adminTab==='bookings'){
-    const l = [...B].sort((a,b)=>b.created-a.created);
-    content = l.length ? `<div class="tablewrap"><table><thead><tr><th>Traveller</th><th>Trip</th><th>Date</th><th>Seats</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>${l.map(b=>brow(b,true)).join('')}</tbody></table></div>` : `<div class="empty" style="grid-column:auto">No bookings yet.</div>`;
+    content = bookingsTable([...B].sort((a,b)=>b.created-a.created), true);
+  } else if(adminTab==='payments'){
+    content = paymentsTable([...P].sort((a,b)=>b.paidAt-a.paidAt));
   } else {
-    const l = U.filter(u=>u.role!=='admin');
-    content = l.length ? `<div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Bookings</th></tr></thead><tbody>${l.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${new Date(u.created).toLocaleDateString('en-IN')}</td><td>${B.filter(b=>b.userId===u.id).length}</td></tr>`).join('')}</tbody></table></div>` : `<div class="empty" style="grid-column:auto">No travellers yet.</div>`;
+    const l = U.filter(u => u.role!=='admin').sort((a,b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+    content = `<div class="section-head"><h3>${l.length} accounts</h3><button class="btn" onclick="managerForm()">Add manager</button></div><div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Bookings</th></tr></thead><tbody>${l.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${roleLabel(u.role)}</td><td>${new Date(u.created).toLocaleDateString('en-IN')}</td><td>${B.filter(b=>b.userId===u.id).length}</td></tr>`).join('')}</tbody></table></div>`;
   }
   return `<div class="wrap section"><div class="section-head"><h2>Admin dashboard</h2><button class="btn ghost sm" onclick="resetData()">Reset demo data</button></div>
   <div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" class="${adminTab===k?'on':''}" onclick="setTab('${k}')">${l}</button>`).join('')}</div>${content}</div>`;
+}
+function managerForm(){
+  modal(`<h3>Add manager</h3><div id="merr"></div>
+  <div class="field"><label for="mn">Full name</label><input type="text" id="mn"></div>
+  <div class="field"><label for="mm">Email</label><input type="email" id="mm"></div>
+  <div class="field"><label for="mp">Password (6+ characters)</label><input type="password" id="mp"></div>
+  <div class="dlgfoot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveManager()">Create manager</button></div>`);
+}
+function saveManager(){
+  const name = $('#mn').value.trim(), email = $('#mm').value.trim().toLowerCase(), pw = $('#mp').value;
+  const bad = !name ? 'Enter a name.' : !/^\S+@\S+\.\S+$/.test(email) ? 'Enter a valid email.' : pw.length < 6 ? 'Use at least 6 characters for the password.' : users().some(u => u.email === email) ? 'An account with this email already exists.' : '';
+  if(bad){ $('#merr').innerHTML = `<div class="err">${esc(bad)}</div>`; return; }
+  const us = users(); us.push({id:uid('u_'), name, email, pass:hash(pw), role:'manager', created:Date.now()}); LS.set('wf_users', us);
+  closeModal(); toast('Manager account created.'); render();
 }
 function adminStatus(id, s){ setBookingStatus(id, s); toast('Booking ' + s.toLowerCase() + '.'); render(); }
 function tripForm(id){
@@ -287,31 +351,44 @@ function delTrip(id){
 }
 function resetData(){
   askConfirm('This erases all trips, bookings and accounts you added, and restores the starting demo data.', 'Reset everything', () => {
-    LS.set('wf_trips', SEED_TRIPS); LS.set('wf_users', SEED_USERS); LS.set('wf_bookings', []); LS.set('wf_session', null);
+    LS.set('wf_trips', SEED_TRIPS); LS.set('wf_users', SEED_USERS); LS.set('wf_bookings', []); LS.set('wf_payments', []); LS.set('wf_session', null);
     toast('Demo data restored.'); go('/admin-login'); render();
   });
 }
 
 /* ---------- router ---------- */
+function moduleRoute(r){
+  for(const p in WF.routes){ if(r === p || r.startsWith(p + '/')) return {def: WF.routes[p], arg: r.slice(p.length + 1)}; }
+  return null;
+}
 function render(){
   const r = curRoute();
   const u = me(); let view;
+  const loginFor = {'/login':'user','/register':'user','/admin-login':'admin','/manager-login':'manager'};
+  if(loginFor[r] && u && u.role === loginFor[r]) return go(homeFor(u));
   if(r.startsWith('/admin') && r !== '/admin-login' && !(u && u.role==='admin')) return go('/admin-login');
-  if(r === '/my-bookings' && !u){ sessionStorage.setItem('wf_next','/my-bookings'); return go('/login'); }
-  if(r === '/my-bookings' && u.role==='admin') return go('/admin');
-  if((r==='/login'||r==='/register') && u) return go(u.role==='admin'?'/admin':'/');
-  if(r==='/admin-login' && u && u.role==='admin') return go('/admin');
-  if(r==='/') view = viewHome();
+  const m = moduleRoute(r);
+  if(m){
+    if(!u){ if(m.def.roles.includes('user')) sessionStorage.setItem('wf_next', r); return go(m.def.roles.includes('manager') ? '/manager-login' : '/login'); }
+    if(!m.def.roles.includes(u.role)) return go(homeFor(u));
+    view = m.def.view(m.arg);
+  }
+  else if(r === '/my-bookings'){
+    if(!u){ sessionStorage.setItem('wf_next','/my-bookings'); return go('/login'); }
+    if(u.role !== 'user') return go(homeFor(u));
+    view = viewMine();
+  }
+  else if(r==='/') view = viewHome();
   else if(r.startsWith('/trip/')) view = viewTrip(r.slice(6));
   else if(r==='/login') view = viewAuth('user');
   else if(r==='/register') view = viewAuth('register');
   else if(r==='/admin-login') view = viewAuth('admin');
-  else if(r==='/my-bookings') view = viewMine();
+  else if(r==='/manager-login') view = viewAuth('manager');
   else if(r==='/admin') view = viewAdmin();
   else view = `<div class="wrap" style="padding:60px 20px"><h2>Page not found</h2><a class="btn" href="${BASE}#/" style="margin-top:14px">Back to trips</a></div>`;
   $('#app').innerHTML = nav() + view;
   if(r==='/') renderGrid();
-  if(!(r==='/' )) window.scrollTo(0,0);
+  if(r !== '/') window.scrollTo(0,0);
 }
 window.addEventListener('hashchange', render);
 render();
